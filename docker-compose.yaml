@@ -21,23 +21,18 @@ services:
       PORT: "8081"
       BASE_URL: http://localhost:8081
       FRONTEND_URL: http://localhost:3000
-
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
       KEYCLOAK_PUBLIC_URL: http://localhost:8080
       KEYCLOAK_REALM: reports-realm
-
       CLIENT_ID: bionicpro-auth
       CLIENT_SECRET: bionicpro-auth-secret
       REDIRECT_URI: http://localhost:8081/auth/callback
-
       COOKIE_NAME: bp_session
       COOKIE_SECURE: "false"
       COOKIE_DOMAIN: ""
-
       SESSION_TTL: 30m
       ACCESS_TOKEN_LEEWAY: 10s
       SESSION_ENCRYPTION_KEY_B64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
-
       READ_TIMEOUT: 10s
       WRITE_TIMEOUT: 15s
       IDLE_TIMEOUT: 60s
@@ -76,9 +71,37 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_HTTP_ENABLED: "true"
-      KC_PROXY: edge
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     depends_on:
       keycloak_db:
         condition: service_healthy
+
+  openldap:
+    build:
+      context: ./ldap
+      dockerfile: Dockerfile
+    container_name: openldap
+    environment:
+      LDAP_ORGANISATION: "BionicPRO Foreign Office"
+      LDAP_DOMAIN: "example.com"
+      LDAP_ADMIN_PASSWORD: "admin"
+      LDAP_CONFIG_PASSWORD: "config"
+      LDAP_TLS: "false"
+    ports:
+      - "1389:389"
+    volumes:
+      - ./ldap/ldap-data:/var/lib/ldap
+      - ./ldap/slapd-data:/etc/ldap/slapd.d
+
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: openldap
+      PHPLDAPADMIN_HTTPS: "false"
+    ports:
+      - "8085:80"
+    depends_on:
+      - openldap
