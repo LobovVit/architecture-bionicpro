@@ -1,24 +1,13 @@
-# ROOT
-dn: dc=example,dc=com
-objectClass: top
-objectClass: dcObject
-objectClass: organization
-o: Example Organization
-dc: example
-
-# PEOPLE
 dn: ou=People,dc=example,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: People
 
-# GROUPS
 dn: ou=Groups,dc=example,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: Groups
 
-# USERS
 dn: uid=john.doe,ou=People,dc=example,dc=com
 objectClass: inetOrgPerson
 cn: John
@@ -43,7 +32,6 @@ uid: alex.johnson
 mail: alex@example.com
 userPassword: password
 
-# GROUPS
 dn: cn=user,ou=Groups,dc=example,dc=com
 objectClass: groupOfNames
 cn: user

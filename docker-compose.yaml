@@ -21,18 +21,23 @@ services:
       PORT: "8081"
       BASE_URL: http://localhost:8081
       FRONTEND_URL: http://localhost:3000
+
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
       KEYCLOAK_PUBLIC_URL: http://localhost:8080
       KEYCLOAK_REALM: reports-realm
+
       CLIENT_ID: bionicpro-auth
       CLIENT_SECRET: bionicpro-auth-secret
       REDIRECT_URI: http://localhost:8081/auth/callback
+
       COOKIE_NAME: bp_session
       COOKIE_SECURE: "false"
       COOKIE_DOMAIN: ""
+
       SESSION_TTL: 30m
       ACCESS_TOKEN_LEEWAY: 10s
       SESSION_ENCRYPTION_KEY_B64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+
       READ_TIMEOUT: 10s
       WRITE_TIMEOUT: 15s
       IDLE_TIMEOUT: 60s
@@ -56,23 +61,27 @@ services:
       start_period: 10s
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0
+    image: quay.io/keycloak/keycloak:26.3.3
     command:
       - start-dev
       - --import-realm
     ports:
       - "8080:8080"
     environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+
       KC_DB: postgres
       KC_DB_URL_HOST: keycloak_db
       KC_DB_URL_DATABASE: keycloak
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: keycloak
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
+
+      KC_LOG_LEVEL: INFO
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     depends_on:
