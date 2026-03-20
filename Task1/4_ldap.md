@@ -84,3 +84,18 @@ Group Object Classes: groupOfNames
 
 User Groups Retrieve Strategy: LOAD_GROUPS_BY_MEMBER_ATTRIBUTE
 Mode: READ_ONLY
+
+настройка ролей 
+
+настройка яндекса - 
+
+Authorization URL: https://oauth.yandex.ru/authorize
+Token URL: https://oauth.yandex.ru/token
+User Info URL: https://login.yandex.ru/info
+Store Tokens: ON
+Validate Signatures: OFF
+Use PKCE: OFF
+Disable User Info: OFF
+user id: id
+username: login
+email: default_email

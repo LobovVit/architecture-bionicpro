@@ -13,6 +13,7 @@ type Session struct {
 	RefreshTokenExpiresAt time.Time `json:"-"`
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`
+	IDToken               string    `json:"-"`
 }
 
 type PendingAuth struct {

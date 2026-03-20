@@ -1,10 +1,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -24,6 +28,8 @@ type Server struct {
 	crypto    *cryptoenc.AESGCM
 	mux       *http.ServeMux
 	cookieOpt CookieOptions
+	client    *http.Client
+	db        *sql.DB
 }
 
 type CookieOptions struct {
@@ -33,19 +39,46 @@ type CookieOptions struct {
 	SameSite http.SameSite
 }
 
-func NewServer(cfg config.Config, store *session.Store, oidcClient *oidc.Client, crypto *cryptoenc.AESGCM) *Server {
+type yandexProfile struct {
+	ID              string `json:"id"`
+	Login           string `json:"login"`
+	DefaultEmail    string `json:"default_email"`
+	FirstName       string `json:"first_name"`
+	LastName        string `json:"last_name"`
+	DisplayName     string `json:"display_name"`
+	RealName        string `json:"real_name"`
+	DefaultAvatarID string `json:"default_avatar_id"`
+}
+
+type yandexConsentRequest struct {
+	Approve bool `json:"approve"`
+}
+
+type brokerTokenResponse struct {
+	AccessToken string `json:"access_token"`
+}
+
+func NewServer(
+	cfg config.Config,
+	store *session.Store,
+	oidcClient *oidc.Client,
+	crypto *cryptoenc.AESGCM,
+	db *sql.DB,
+) *Server {
 	s := &Server{
 		cfg:    cfg,
 		store:  store,
 		oidc:   oidcClient,
 		crypto: crypto,
+		db:     db,
 		cookieOpt: CookieOptions{
 			Name:     cfg.CookieName,
 			Secure:   cfg.CookieSecure,
 			Domain:   cfg.CookieDomain,
 			SameSite: http.SameSiteLaxMode,
 		},
-		mux: http.NewServeMux(),
+		mux:    http.NewServeMux(),
+		client: &http.Client{Timeout: 15 * time.Second},
 	}
 
 	s.routes()
@@ -61,6 +94,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/auth/callback", s.handleCallback)
 	s.mux.HandleFunc("/auth/me", s.handleMe)
 	s.mux.HandleFunc("/auth/logout", s.handleLogout)
+
+	s.mux.HandleFunc("/auth/yandex/profile", s.handleYandexProfile)
+	s.mux.HandleFunc("/auth/yandex/consent", s.handleYandexConsent)
+
 	s.mux.HandleFunc("/api/reports", s.handleReports)
 	s.mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -151,6 +188,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		Username:              username,
 		Roles:                 roles,
 		AccessToken:           tokenResp.AccessToken,
+		IDToken:               tokenResp.IDToken,
 		EncryptedRefreshToken: encRefresh,
 		AccessTokenExpiresAt:  oidc.AccessExpiry(now, tokenResp),
 		RefreshTokenExpiresAt: oidc.RefreshExpiry(now, tokenResp),
@@ -184,11 +222,29 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var idToken string
 	if c, err := r.Cookie(s.cookieOpt.Name); err == nil {
+		if sess, err := s.store.GetSession(c.Value); err == nil {
+			idToken = sess.IDToken
+		}
 		s.store.DeleteSession(c.Value)
 	}
 	s.clearSessionCookie(w)
-	w.WriteHeader(http.StatusNoContent)
+
+	logoutURL := fmt.Sprintf(
+		"%s/realms/%s/protocol/openid-connect/logout?post_logout_redirect_uri=%s",
+		s.cfg.KeycloakPublicURL,
+		s.cfg.KeycloakRealm,
+		url.QueryEscape(s.cfg.FrontendURL),
+	)
+
+	if idToken != "" {
+		logoutURL += "&id_token_hint=" + url.QueryEscape(idToken)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"logout_url": logoutURL,
+	})
 }
 
 func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
@@ -214,6 +270,159 @@ func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleYandexProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sess, newSessionID, ok := s.authenticateAndMaybeRotate(w, r)
+	if !ok {
+		return
+	}
+
+	profile, err := s.fetchAndLookupYandexProfile(r, sess.AccessToken)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	resp := map[string]any{
+		"session_id": newSessionID,
+		"profile":    profile,
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleYandexConsent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sess, newSessionID, ok := s.authenticateAndMaybeRotate(w, r)
+	if !ok {
+		return
+	}
+
+	var req yandexConsentRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	if !req.Approve {
+		http.Error(w, "consent not approved", http.StatusBadRequest)
+		return
+	}
+
+	profile, err := s.fetchAndLookupYandexProfile(r, sess.AccessToken)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	raw, _ := json.Marshal(profile)
+
+	_, err = s.db.Exec(`
+		INSERT INTO yandex_profiles
+		    (user_id, external_id, login, email, first_name, last_name, display_name, avatar_id, raw_profile, consent_granted, consent_at, created_at, updated_at)
+		VALUES
+		    ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, now(), now(), now())
+		ON CONFLICT (provider, external_id) DO UPDATE SET
+		    user_id = EXCLUDED.user_id,
+		    login = EXCLUDED.login,
+		    email = EXCLUDED.email,
+		    first_name = EXCLUDED.first_name,
+		    last_name = EXCLUDED.last_name,
+		    display_name = EXCLUDED.display_name,
+		    avatar_id = EXCLUDED.avatar_id,
+		    raw_profile = EXCLUDED.raw_profile,
+		    consent_granted = true,
+		    consent_at = now(),
+		    updated_at = now()
+	`,
+		sess.UserID,
+		profile.ID,
+		profile.Login,
+		profile.DefaultEmail,
+		profile.FirstName,
+		profile.LastName,
+		profile.DisplayName,
+		profile.DefaultAvatarID,
+		raw,
+	)
+	if err != nil {
+		http.Error(w, "save profile: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"saved":      true,
+		"session_id": newSessionID,
+		"profile":    profile,
+	})
+}
+
+func (s *Server) fetchAndLookupYandexProfile(r *http.Request, keycloakAccessToken string) (*yandexProfile, error) {
+	brokerURL := fmt.Sprintf(
+		"%s/realms/%s/broker/%s/token",
+		s.cfg.KeycloakInternalURL,
+		s.cfg.KeycloakRealm,
+		s.cfg.KeycloakBrokerAlias,
+	)
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, brokerURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build broker token request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+keycloakAccessToken)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("broker token request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("broker token endpoint %d: %s", resp.StatusCode, string(body))
+	}
+
+	var brokerResp brokerTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&brokerResp); err != nil {
+		return nil, fmt.Errorf("decode broker token response: %w", err)
+	}
+	if brokerResp.AccessToken == "" {
+		return nil, fmt.Errorf("empty broker access token")
+	}
+
+	userInfoReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, s.cfg.YandexUserInfoURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build yandex userinfo request: %w", err)
+	}
+	userInfoReq.Header.Set("Authorization", "OAuth "+brokerResp.AccessToken)
+
+	userInfoResp, err := s.client.Do(userInfoReq)
+	if err != nil {
+		return nil, fmt.Errorf("call yandex userinfo: %w", err)
+	}
+	defer userInfoResp.Body.Close()
+
+	if userInfoResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(userInfoResp.Body)
+		return nil, fmt.Errorf("yandex userinfo %d: %s", userInfoResp.StatusCode, string(body))
+	}
+
+	var profile yandexProfile
+	if err := json.NewDecoder(userInfoResp.Body).Decode(&profile); err != nil {
+		return nil, fmt.Errorf("decode yandex userinfo: %w", err)
+	}
+	if profile.ID == "" {
+		return nil, fmt.Errorf("yandex profile does not contain id")
+	}
+
+	return &profile, nil
 }
 
 func (s *Server) authenticateAndMaybeRotate(w http.ResponseWriter, r *http.Request) (models.Session, string, bool) {
@@ -361,4 +570,10 @@ func randString(n int) string {
 func pkceChallenge(verifier string) string {
 	sum := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// Optional helper if you want to quickly test consent from browser console.
+func NewConsentBody() io.Reader {
+	body, _ := json.Marshal(yandexConsentRequest{Approve: true})
+	return bytes.NewReader(body)
 }

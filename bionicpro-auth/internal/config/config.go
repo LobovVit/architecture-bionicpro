@@ -28,6 +28,9 @@ type Config struct {
 	ReadTimeout         time.Duration
 	WriteTimeout        time.Duration
 	IdleTimeout         time.Duration
+	ProfileDBDSN        string
+	KeycloakBrokerAlias string
+	YandexUserInfoURL   string
 }
 
 func Load() Config {
@@ -57,6 +60,9 @@ func Load() Config {
 		ReadTimeout:         getDurationEnv("READ_TIMEOUT", 10*time.Second),
 		WriteTimeout:        getDurationEnv("WRITE_TIMEOUT", 15*time.Second),
 		IdleTimeout:         getDurationEnv("IDLE_TIMEOUT", 60*time.Second),
+		ProfileDBDSN:        getEnv("PROFILE_DB_DSN", "postgres://bionicpro:bionicpro@profile_db:5432/bionicpro?sslmode=disable"),
+		KeycloakBrokerAlias: getEnv("KEYCLOAK_BROKER_ALIAS", "yandex"),
+		YandexUserInfoURL:   getEnv("YANDEX_USERINFO_URL", "https://login.yandex.ru/info"),
 	}
 }
 

@@ -6,10 +6,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      REACT_APP_AUTH_URL: http://localhost:8081
+      VITE_AUTH_BASE_URL: http://localhost:8081
     depends_on:
-      bionicpro-auth:
-        condition: service_started
+      - bionicpro-auth
 
   bionicpro-auth:
     build:
@@ -25,6 +24,8 @@ services:
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
       KEYCLOAK_PUBLIC_URL: http://localhost:8080
       KEYCLOAK_REALM: reports-realm
+      KEYCLOAK_BROKER_ALIAS: yandex
+      YANDEX_USERINFO_URL: https://login.yandex.ru/info
 
       CLIENT_ID: bionicpro-auth
       CLIENT_SECRET: bionicpro-auth-secret
@@ -32,18 +33,29 @@ services:
 
       COOKIE_NAME: bp_session
       COOKIE_SECURE: "false"
-      COOKIE_DOMAIN: ""
-
       SESSION_TTL: 30m
       ACCESS_TOKEN_LEEWAY: 10s
       SESSION_ENCRYPTION_KEY_B64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+
+      PROFILE_DB_DSN: postgres://bionicpro:bionicpro@profiledb:5432/bionicpro?sslmode=disable
 
       READ_TIMEOUT: 10s
       WRITE_TIMEOUT: 15s
       IDLE_TIMEOUT: 60s
     depends_on:
-      keycloak:
-        condition: service_started
+      - keycloak
+      - profiledb
+
+  profiledb:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bionicpro
+      POSTGRES_USER: bionicpro
+      POSTGRES_PASSWORD: bionicpro
+    ports:
+      - "5435:5432"
+    volumes:
+      - ./postgres-bionicpro-data:/var/lib/postgresql/data
 
   keycloak_db:
     image: postgres:16-alpine
@@ -53,12 +65,6 @@ services:
       POSTGRES_PASSWORD: keycloak
     volumes:
       - ./postgres-keycloak-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.3.3
@@ -70,23 +76,21 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-
       KC_DB: postgres
       KC_DB_URL_HOST: keycloak_db
       KC_DB_URL_DATABASE: keycloak
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: keycloak
-
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
 
       KC_LOG_LEVEL: INFO
     volumes:
-      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - ./keycloak/keycloak-results-export.json:/opt/keycloak/data/import/keycloak-results-export.json:ro
     depends_on:
-      keycloak_db:
-        condition: service_healthy
+      - keycloak_db
 
   openldap:
     build:
