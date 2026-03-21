@@ -1,2 +1,5 @@
 /postgres-keycloak-data
+/postgres-bionicpro-data
 2024__yandex-architecture-sso.code-workspace
+/ldap/ldap-data/
+/ldap/slapd-data/
