@@ -31,6 +31,7 @@ type Config struct {
 	ProfileDBDSN        string
 	KeycloakBrokerAlias string
 	YandexUserInfoURL   string
+	ReportsServiceURL   string
 }
 
 func Load() Config {
@@ -63,6 +64,7 @@ func Load() Config {
 		ProfileDBDSN:        getEnv("PROFILE_DB_DSN", "postgres://bionicpro:bionicpro@profile_db:5432/bionicpro?sslmode=disable"),
 		KeycloakBrokerAlias: getEnv("KEYCLOAK_BROKER_ALIAS", "yandex"),
 		YandexUserInfoURL:   getEnv("YANDEX_USERINFO_URL", "https://login.yandex.ru/info"),
+		ReportsServiceURL:   getEnv("REPORTS_SERVICE_URL", "http://localhost:8090"),
 	}
 }
 

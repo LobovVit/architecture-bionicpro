@@ -55,6 +55,9 @@ const ReportPage: React.FC = () => {
   const [consentLoading, setConsentLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
   const loadSession = async () => {
     try {
       const response = await fetch(`${API_URL}/auth/me`, { credentials: 'include' });
@@ -106,6 +109,17 @@ const ReportPage: React.FC = () => {
     void loadYandexProfile();
   }, [me]);
 
+  useEffect(() => {
+    const today = new Date();
+    const weekAgo = new Date();
+    weekAgo.setDate(today.getDate() - 7);
+
+    const toStr = (d: Date) => d.toISOString().slice(0, 10);
+
+    setDateTo(toStr(today));
+    setDateFrom(toStr(weekAgo));
+  }, []);
+
   const login = () => {
     window.location.href = `${API_URL}/auth/login`;
   };
@@ -145,6 +159,46 @@ const ReportPage: React.FC = () => {
       setReportLoading(true);
       setError(null);
 
+      if (!dateFrom || !dateTo) {
+        setError('Please select report period.');
+        return;
+      }
+
+      const response = await fetch(
+          `${API_URL}/reports/me?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`,
+          { credentials: 'include' }
+      );
+
+      if (response.status === 401) {
+        setMe(null);
+        setError('Session expired. Please sign in again.');
+        return;
+      }
+
+      if (response.status === 422 || response.status === 409 || response.status === 503) {
+        const errBody = await response.text();
+        setError(errBody || 'Report is not ready yet. Airflow has not processed this period.');
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      setReport(await response.json());
+      await loadSession();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load report');
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const downloadDemoReport = async () => {
+    try {
+      setReportLoading(true);
+      setError(null);
+
       const response = await fetch(`${API_URL}/api/reports`, {
         credentials: 'include',
       });
@@ -159,12 +213,10 @@ const ReportPage: React.FC = () => {
         throw new Error(`Request failed with status ${response.status}`);
       }
 
-      const data: ReportResponse = await response.json();
-      setReport(data);
-
+      setReport(await response.json());
       await loadSession();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load report');
+      setError(err instanceof Error ? err.message : 'Failed to load demo report');
     } finally {
       setReportLoading(false);
     }
@@ -297,6 +349,40 @@ const ReportPage: React.FC = () => {
               </div>
           )}
 
+          <div className="flex flex-col gap-2 mb-4">
+            <label className="text-sm font-medium text-gray-700">Report period</label>
+
+            <div className="flex gap-3">
+              <div className="flex flex-col">
+                <label className="text-xs text-gray-500 mb-1">From</label>
+                <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="border rounded px-3 py-2"
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-xs text-gray-500 mb-1">To</label>
+                <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="border rounded px-3 py-2"
+                />
+              </div>
+            </div>
+          </div>
+
+          <button
+              onClick={downloadDemoReport}
+              disabled={reportLoading}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+          >
+            Load demo report
+          </button>
+
           <button
               onClick={downloadReport}
               disabled={reportLoading}
@@ -304,7 +390,7 @@ const ReportPage: React.FC = () => {
                   reportLoading ? 'opacity-50 cursor-not-allowed' : ''
               }`}
           >
-            {reportLoading ? 'Generating report...' : 'Download report'}
+            {reportLoading ? 'Generating report...' : 'Generate report'}
           </button>
 
           {error && (

@@ -98,6 +98,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/auth/yandex/profile", s.handleYandexProfile)
 	s.mux.HandleFunc("/auth/yandex/consent", s.handleYandexConsent)
 
+	s.mux.HandleFunc("/reports/me", s.handleReportsMe)
+
 	s.mux.HandleFunc("/api/reports", s.handleReports)
 	s.mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -245,6 +247,44 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"logout_url": logoutURL,
 	})
+}
+
+func (s *Server) handleReportsMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sess, newSessionID, ok := s.authenticateAndMaybeRotate(w, r)
+	if !ok {
+		return
+	}
+
+	reportsURL := s.cfg.ReportsServiceURL + "/reports/me"
+	if raw := r.URL.RawQuery; raw != "" {
+		reportsURL += "?" + raw
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, reportsURL, nil)
+	if err != nil {
+		http.Error(w, "failed to create reports request", http.StatusInternalServerError)
+		return
+	}
+
+	req.Header.Set("X-User-ID", sess.UserID)
+	req.Header.Set("X-Username", sess.Username)
+	req.Header.Set("X-Session-ID", newSessionID)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		http.Error(w, "reports service unavailable", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {

@@ -38,6 +38,7 @@ services:
       SESSION_ENCRYPTION_KEY_B64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
 
       PROFILE_DB_DSN: postgres://bionicpro:bionicpro@profiledb:5432/bionicpro?sslmode=disable
+      REPORTS_SERVICE_URL: http://reports-service:8090
 
       READ_TIMEOUT: 10s
       WRITE_TIMEOUT: 15s
@@ -45,6 +46,7 @@ services:
     depends_on:
       - keycloak
       - profiledb
+      - reports-service
 
   profiledb:
     image: postgres:16-alpine
@@ -56,6 +58,31 @@ services:
       - "5435:5432"
     volumes:
       - ./postgres-bionicpro-data:/var/lib/postgresql/data
+      - ./profiledb/init:/docker-entrypoint-initdb.d:ro
+
+  telemetrydb:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: telemetry
+      POSTGRES_USER: telemetry
+      POSTGRES_PASSWORD: telemetry
+    ports:
+      - "5436:5432"
+    volumes:
+      - ./postgres-telemetry-data:/var/lib/postgresql/data
+      - ./telemetrydb/init:/docker-entrypoint-initdb.d:ro
+
+  airflow-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    ports:
+      - "5437:5432"
+    volumes:
+      - ./postgres-airflow-data:/var/lib/postgresql/data
+
 
   keycloak_db:
     image: postgres:16-alpine
@@ -118,3 +145,125 @@ services:
       - "8085:80"
     depends_on:
       - openldap
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: report_mart
+      CLICKHOUSE_USER: report_user
+      CLICKHOUSE_PASSWORD: report_pass
+    volumes:
+      - ./clickhouse/data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+
+  reports-service:
+    build:
+      context: ./reports-service
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      PORT: "8090"
+      CLICKHOUSE_DSN: clickhouse://report_user:report_pass@clickhouse:9000/report_mart
+      ETL_PIPELINE_NAME: build_user_reports_mart
+    depends_on:
+      - clickhouse
+
+  airflow-init:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    depends_on:
+      - airflow-db
+      - clickhouse
+      - profiledb
+      - telemetrydb
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: super-secret-airflow-key-123
+
+      CRM_DSN: postgresql://bionicpro:bionicpro@profiledb:5432/bionicpro
+      TELEMETRY_DSN: postgresql://telemetry:telemetry@telemetrydb:5432/telemetry
+
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_DB: report_mart
+      CLICKHOUSE_USER: report_user
+      CLICKHOUSE_PASSWORD: report_pass
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate && \
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Air \
+          --lastname Flow \
+          --role Admin \
+          --email admin@example.com || true
+
+  airflow-webserver:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    depends_on:
+      - airflow-db
+      - airflow-init
+      - clickhouse
+      - profiledb
+      - telemetrydb
+    ports:
+      - "8089:8080"
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: super-secret-airflow-key-123
+
+      CRM_DSN: postgresql://bionicpro:bionicpro@profiledb:5432/bionicpro
+      TELEMETRY_DSN: postgresql://telemetry:telemetry@telemetrydb:5432/telemetry
+
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_DB: report_mart
+      CLICKHOUSE_USER: report_user
+      CLICKHOUSE_PASSWORD: report_pass
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+    command: webserver
+
+  airflow-scheduler:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    depends_on:
+      - airflow-db
+      - airflow-init
+      - clickhouse
+      - profiledb
+      - telemetrydb
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: super-secret-airflow-key-123
+
+      CRM_DSN: postgresql://bionicpro:bionicpro@profiledb:5432/bionicpro
+      TELEMETRY_DSN: postgresql://telemetry:telemetry@telemetrydb:5432/telemetry
+
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_DB: report_mart
+      CLICKHOUSE_USER: report_user
+      CLICKHOUSE_PASSWORD: report_pass
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+    command: scheduler

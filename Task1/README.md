@@ -4,12 +4,11 @@ docker compose down -v
 ```
 ```
 rm -rf postgres-keycloak-data
-```
-```
 rm -rf ldap/ldap-data ldap/slapd-data
-```
-```
 rm -rf postgres-bionicpro-data
+rm -rf postgres-telemetry-data
+rm -rf postgres-airflow-data
+rm -rf clickhouse/data
 ```
 ```
 docker compose up -d --build
@@ -43,3 +42,8 @@ http://localhost:8080  admin / admin
 ```
 http://localhost:3000` jane.smith / password
 ```
+
+### Atirflow 
+```
+http://localhost:8089    admin / admin
+``` 
