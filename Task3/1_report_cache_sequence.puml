@@ -1,0 +1,43 @@
+@startuml
+title Report request with S3 cache and CDN
+
+actor User
+participant UI
+participant "bionicpro-auth" as AUTH
+participant "reports-service" as RS
+database "ClickHouse" as CH
+database "MinIO/S3" as S3
+participant "Nginx CDN" as CDN
+
+User -> UI: Choose period + click Generate report
+UI -> AUTH: GET /reports/me?date_from&date_to
+AUTH -> RS: GET /reports/me + X-User-ID
+RS -> CH: read etl_watermark
+alt period not processed yet
+  RS --> AUTH: 422 report_period_not_ready
+  AUTH --> UI: 422
+else period ready
+  RS -> S3: HEAD object(report key)
+  alt object exists
+    S3 --> RS: found
+    RS --> AUTH: 200 {status: cached, cdn_url}
+    AUTH --> UI: cdn_url
+    UI -> CDN: GET cdn_url
+    CDN -> S3: GET object
+    S3 --> CDN: object
+    CDN --> UI: report file
+  else object missing
+    S3 --> RS: not found
+    RS -> CH: SELECT report rows from user_reports
+    CH --> RS: report rows
+    RS -> S3: PUT report.json
+    S3 --> RS: stored
+    RS --> AUTH: 200 {status: generated, cdn_url}
+    AUTH --> UI: cdn_url
+    UI -> CDN: GET cdn_url
+    CDN -> S3: GET object
+    S3 --> CDN: object
+    CDN --> UI: report file
+  end
+end
+@enduml

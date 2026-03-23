@@ -1,2 +1,10 @@
 /postgres-keycloak-data
+/postgres-bionicpro-data
 2024__yandex-architecture-sso.code-workspace
+/ldap/ldap-data/
+/ldap/slapd-data/
+/postgres-airflow-data/
+/postgres-telemetry-data/
+/clickhouse/data/
+/nginx/cache/
+/minio-data/
