@@ -9,6 +9,8 @@ rm -rf postgres-bionicpro-data
 rm -rf postgres-telemetry-data
 rm -rf postgres-airflow-data
 rm -rf clickhouse/data
+rm -rf nginx/cache
+rm -rf minio-data
 ```
 ```
 docker compose up -d --build
@@ -47,3 +49,8 @@ http://localhost:3000` jane.smith / password
 ```
 http://localhost:8089    admin / admin
 ``` 
+
+### Minio
+```
+http://localhost:9010/  minioadmin / minioadmin
+```

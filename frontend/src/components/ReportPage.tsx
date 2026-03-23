@@ -8,19 +8,40 @@ type MeResponse = {
 };
 
 type ReportResponse = {
-  owner: string;
-  report_generated: string;
-  prosthesis_ids: string[];
-  summary: {
+  status?: string;
+  cdn_url?: string;
+  object_key?: string;
+  loaded_until?: string;
+
+  owner?: string;
+  report_generated?: string;
+  prosthesis_ids?: string[];
+  summary?: {
     daily_movements: number;
     battery_cycles: number;
     calibration_state: string;
   };
-  security: {
+  security?: {
     token_on_client: boolean;
     session_rotated: boolean;
     new_session_id?: string;
   };
+  user_id?: string;
+  date_from?: string;
+  date_to?: string;
+  generated_at?: string;
+  items?: Array<{
+    report_date: string;
+    prosthesis_id: string;
+    prosthesis_model: string;
+    calibration_state: string;
+    daily_movements: number;
+    avg_load: number;
+    battery_cycles: number;
+    avg_battery_level: number;
+    alerts_count: number;
+    telemetry_events_count: number;
+  }>;
 };
 
 type YandexProfile = {
@@ -48,6 +69,7 @@ const API_URL = process.env.REACT_APP_AUTH_URL || 'http://localhost:8081';
 const ReportPage: React.FC = () => {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [report, setReport] = useState<ReportResponse | null>(null);
+  const [cachedReportContent, setCachedReportContent] = useState<any | null>(null);
   const [yandexProfile, setYandexProfile] = useState<YandexProfile | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -141,6 +163,7 @@ const ReportPage: React.FC = () => {
 
       setMe(null);
       setReport(null);
+      setCachedReportContent(null);
       setYandexProfile(null);
 
       if (data.logout_url) {
@@ -154,10 +177,36 @@ const ReportPage: React.FC = () => {
     }
   };
 
+  const loadCachedReportContent = async (cdnUrl?: string) => {
+    if (!cdnUrl) {
+      setCachedReportContent(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(cdnUrl);
+
+      if (!response.ok) {
+        setCachedReportContent(null);
+        return;
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        setCachedReportContent(await response.json());
+      } else {
+        setCachedReportContent(await response.text());
+      }
+    } catch {
+      setCachedReportContent(null);
+    }
+  };
+
   const downloadReport = async () => {
     try {
       setReportLoading(true);
       setError(null);
+      setCachedReportContent(null);
 
       if (!dateFrom || !dateTo) {
         setError('Please select report period.');
@@ -185,7 +234,9 @@ const ReportPage: React.FC = () => {
         throw new Error(`Request failed with status ${response.status}`);
       }
 
-      setReport(await response.json());
+      const data: ReportResponse = await response.json();
+      setReport(data);
+      await loadCachedReportContent(data.cdn_url);
       await loadSession();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report');
@@ -198,6 +249,7 @@ const ReportPage: React.FC = () => {
     try {
       setReportLoading(true);
       setError(null);
+      setCachedReportContent(null);
 
       const response = await fetch(`${API_URL}/api/reports`, {
         credentials: 'include',
@@ -375,23 +427,36 @@ const ReportPage: React.FC = () => {
             </div>
           </div>
 
-          <button
-              onClick={downloadDemoReport}
-              disabled={reportLoading}
-              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-          >
-            Load demo report
-          </button>
+          <div className="flex gap-3">
+            <button
+                onClick={downloadDemoReport}
+                disabled={reportLoading}
+                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              Load demo report
+            </button>
 
-          <button
-              onClick={downloadReport}
-              disabled={reportLoading}
-              className={`px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 ${
-                  reportLoading ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-          >
-            {reportLoading ? 'Generating report...' : 'Generate report'}
-          </button>
+            <button
+                onClick={downloadReport}
+                disabled={reportLoading}
+                className={`px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 ${
+                    reportLoading ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+            >
+              {reportLoading ? 'Generating report...' : 'Generate report'}
+            </button>
+
+            {report?.cdn_url && (
+                <a
+                    href={report.cdn_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 inline-flex items-center"
+                >
+                  Open cached report
+                </a>
+            )}
+          </div>
 
           {error && (
               <div className="mt-4 p-4 bg-red-100 text-red-700 rounded">
@@ -401,9 +466,20 @@ const ReportPage: React.FC = () => {
 
           {report && (
               <div className="mt-6 p-4 bg-gray-50 rounded border">
-                <h2 className="text-lg font-semibold mb-3">Latest report</h2>
+                <h2 className="text-lg font-semibold mb-3">API response</h2>
                 <pre className="text-sm whitespace-pre-wrap break-words">
               {JSON.stringify(report, null, 2)}
+            </pre>
+              </div>
+          )}
+
+          {cachedReportContent && (
+              <div className="mt-6 p-4 bg-green-50 rounded border">
+                <h2 className="text-lg font-semibold mb-3">Cached report content</h2>
+                <pre className="text-sm whitespace-pre-wrap break-words">
+              {typeof cachedReportContent === 'string'
+                  ? cachedReportContent
+                  : JSON.stringify(cachedReportContent, null, 2)}
             </pre>
               </div>
           )}
