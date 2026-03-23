@@ -252,7 +252,7 @@ func (s *Server) queryReportItems(ctx context.Context, userID, dateFrom, dateTo 
 			avg_battery_level,
 			alerts_count,
 			telemetry_events_count
-		FROM report_mart.user_reports
+		FROM report_mart.user_reports_v2 --task4 debezium sinc
 		WHERE user_id = ? AND report_date BETWEEN ? AND ?
 		ORDER BY report_date DESC, prosthesis_id
 	`, userID, dateFrom, dateTo)

@@ -17,7 +17,7 @@ docker compose up -d --build
 ```
 ### Дозапускаем 
 ```
-docker compose up -d bionicpro-auth airflow-scheduler airflow-webserver airflow-init
+docker compose up -d bionicpro-auth airflow-scheduler airflow-webserver airflow-init kafka-connect-init
 ```
 ### Отключаем ssh (если хотим в keycloak http://localhost:8080/)
 ```

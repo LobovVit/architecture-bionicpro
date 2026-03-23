@@ -1,0 +1,25 @@
+{
+  "name": "crm-profiledb-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "profiledb",
+    "database.port": "5432",
+    "database.user": "bionicpro",
+    "database.password": "bionicpro",
+    "database.dbname": "bionicpro",
+    "database.server.name": "crm",
+    "topic.prefix": "crm",
+    "slot.name": "debezium_profiledb_slot",
+    "publication.name": "debezium_profiledb_pub",
+    "plugin.name": "pgoutput",
+    "table.include.list": "public.yandex_profiles",
+    "snapshot.mode": "initial",
+    "transforms": "unwrap",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "false",
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false"
+  }
+}
