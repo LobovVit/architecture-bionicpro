@@ -1,5 +1,5 @@
-##  Как запустить и проверить: 
-1. Чистим (если уже запускали и хотим с чистоо листа)
+##  Как запустить и проверить (команды ниже): 
+1. Чистим (если уже запускали и хотим с чистого листа)
 2. Запускаем (Дозапускаем если нужно)
 3. Ходим смотрим (ссылки ниже)
 4. Для отчета под конкретного пользователя проливаем на БД telemetrydb скрипт  - [01_telemetry.sql](telemetrydb/init/01_telemetry.sql) 
@@ -49,7 +49,6 @@ docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update realms/reports-re
 ## Ходим смотрим
 ### LDAP админка
 ```
-LDAP админка
 http://localhost:8085
 cn=admin,dc=example,dc=com / admin
 ```

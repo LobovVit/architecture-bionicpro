@@ -405,7 +405,7 @@ services:
           -H "Content-Type: application/json" \
           --data @/debezium/debezium-connector-crm.json)
 
-        if [ "$RESPONSE" = "409" ]; then
+        if [ "$$RESPONSE" = "409" ]; then
           echo "Connector already exists, updating..."
 
           curl -s -X PUT http://kafka-connect:8083/connectors/crm-profiledb-connector/config \

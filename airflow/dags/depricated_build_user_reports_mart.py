@@ -10,7 +10,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from clickhouse_driver import Client as ClickHouseClient
 
-DAG_ID = "build_user_reports_mart"
+DAG_ID = "DEPRICATED_build_user_reports_mart"
 
 CRM_DSN = os.environ.get("CRM_DSN", "postgresql://bionicpro:bionicpro@profiledb:5432/bionicpro")
 TELEMETRY_DSN = os.environ.get("TELEMETRY_DSN", "postgresql://telemetry:telemetry@telemetrydb:5432/telemetry")
