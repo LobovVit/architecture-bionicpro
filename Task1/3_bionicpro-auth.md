@@ -19,7 +19,4 @@ rm -rf postgres-keycloak-data
 docker compose up --build
 ```
 
-## Тестовый пользователь
-- `prothetic1 / prothetic123`
-
 ![screen](./3_bionicpro-auth.png)
